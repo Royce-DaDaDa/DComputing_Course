@@ -13,7 +13,7 @@
   ![文件分片1](https://github.com/Royce-DaDaDa/DComputing_Course/blob/master/pics/3.png)
   ![文件分片2](https://github.com/Royce-DaDaDa/DComputing_Course/blob/master/pics/4.png)
   ![文件分片3](https://github.com/Royce-DaDaDa/DComputing_Course/blob/master/pics/7.png)
-  ![客户端获取的结果](https://github.com/Royce-DaDaDa/DComputing_Course/blob/master/pics/4.png)
+  ![客户端获取的结果](https://github.com/Royce-DaDaDa/DComputing_Course/blob/master/pics/5.png)
   ![客户端运行截图](https://github.com/Royce-DaDaDa/DComputing_Course/blob/master/pics/1.png)
   ![服务端运行截图](https://github.com/Royce-DaDaDa/DComputing_Course/blob/master/pics/2.png)
   
