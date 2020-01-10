@@ -1,102 +1,159 @@
 #include "CBlockingSocket.h"
-#define DEFAULT_BUFLEN 512
-CBlockingSocket::CBlockingSocket() {
-	consocket = INVALID_SOCKET;
-	listensocket = INVALID_SOCKET;
+
+CBlockingSocket::CBlockingSocket()
+{
+	this->m_socket = INVALID_SOCKET;
+	this->info = NULL;
 }
-bool CBlockingSocket::Open(const char* ip, const char* port) {
-	struct addrinfo *result = NULL,
-		*ptr = NULL,
-		hints;
-	int iResult;
-	// Resolve the server address and port
-	iResult = getaddrinfo(ip, port, &hints, &result);
-	if (iResult != 0) {
-		printf("getaddrinfo failed with error: %d\n", iResult);
-		WSACleanup();
-		return false;
+
+CBlockingSocket::CBlockingSocket(SOCKET socket)
+{
+	this->m_socket = socket;
+	this->info = NULL;
+}
+
+CBlockingSocket::~CBlockingSocket(void)
+{
+}
+
+
+BOOL CBlockingSocket::Open(const char *ip, const char *port)
+{
+	struct addrinfo hints;
+	ZeroMemory(&hints, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+	if (ip == NULL)
+	{
+		hints.ai_flags = AI_PASSIVE;
 	}
 
-	// Attempt to connect to an address until one succeeds
-	for (ptr = result; ptr != NULL; ptr = ptr->ai_next) {
-
-		// Create a SOCKET for connecting to server
-		consocket = socket(ptr->ai_family, ptr->ai_socktype,
-			ptr->ai_protocol);
-		if (consocket == INVALID_SOCKET) {
-			printf("socket failed with error: %ld\n", WSAGetLastError());
-			WSACleanup();
-			return false;
+	if (getaddrinfo(ip, port, &hints, &this->info) == 0)
+	{
+		this->m_socket = socket(this->info->ai_family, this->info->ai_socktype, this->info->ai_protocol);
+		if (this->m_socket == INVALID_SOCKET)
+		{
+			cout << "Open Socket Failed!" << endl;
+			return FALSE;
 		}
+	}
+	else {
+		cout << "GetAddrInfo Failed!" << endl;
+		return FALSE;
+	}
+	return TRUE;
+}
 
-		// Connect to server.
-		iResult = connect(consocket, ptr->ai_addr, (int)ptr->ai_addrlen);
-		if (iResult == SOCKET_ERROR) {
-			closesocket(consocket);
-			consocket = INVALID_SOCKET;
-			continue;
+BOOL CBlockingSocket::Listen(const char *port)
+{
+	if (bind(this->m_socket, this->info->ai_addr, (int)this->info->ai_addrlen) == 0)
+	{
+		if (listen(this->m_socket, 5) == 0)
+		{
+			cout << "File Server is listening on port: " << port << endl;
+			return TRUE;
 		}
-		break;
+		else
+		{
+			cout << "Server Listen Failed!" << endl;
+			return FALSE;
+		}
 	}
-	printf("Connection established to remote server at %s:%s \n", ip, port);
-	freeaddrinfo(result);
-	return true;
-}
-bool CBlockingSocket::Close() {
-	closesocket(consocket);
-	return true;
-}
-
-bool CBlockingSocket::Listen(SOCKADDR* server,int size) {
-	listensocket = socket(AF_INET, SOCK_STREAM, 0);
-	int iResult;
-	iResult = bind(listensocket, server, size);
-	if (iResult == SOCKET_ERROR) {
-		printf("bind failed with error: %d\n", WSAGetLastError());
-		closesocket(listensocket);
-		WSACleanup();
-		return false;
+	else
+	{
+		cout << "Bind Socket Failed!" << endl;
+		return FALSE;
 	}
-
-	iResult = listen(listensocket, 3);
-	if (iResult == SOCKET_ERROR) {
-		printf("listen failed with error: %d\n", WSAGetLastError());
-		closesocket(listensocket);
-		WSACleanup();
-		return false;
-	}
-	return true;
 }
 
-bool CBlockingSocket::Accept() {
-	SOCKADDR_IN ClientAddr;
-	int len = sizeof(ClientAddr);
-	consocket = accept(listensocket, (SOCKADDR *)&ClientAddr, &len);
 
-	if (consocket == INVALID_SOCKET) {
-		printf("accept failed with error: %d\n", WSAGetLastError());
-		closesocket(listensocket);
-		WSACleanup();
-		return false;
+CBlockingSocket CBlockingSocket::Accept(struct sockaddr &their_addr)
+{
+	int addr_size = sizeof(their_addr);
+	SOCKET ClientSocket;
+	ClientSocket = INVALID_SOCKET;
+
+	fd_set fdread;
+	int ret;
+	FD_ZERO(&fdread);
+	FD_SET(m_socket, &fdread);
+
+	if ((ret = select(0,//
+		&fdread, //指针，指向一组等待可读性检查的套接口
+		NULL,    //指针，指向一组等待可写性检查的套接口
+		NULL,    //指针，指向一组等待错误检查的套接口
+		NULL))   //select()最多等待时间
+		== SOCKET_ERROR)
+	{
+		return INVALID_SOCKET;
 	}
-	printf("Accepted connection from %s\n", inet_ntoa(ClientAddr.sin_addr));
-	return true;
+
+	if (ret > 0)
+	{
+		if (FD_ISSET(m_socket, &fdread))
+		{
+			ClientSocket = accept(m_socket, &their_addr, &addr_size);
+			if (ClientSocket == INVALID_SOCKET) {
+				printf("accept failed: %d\n", WSAGetLastError());
+				return INVALID_SOCKET;
+			}
+
+			return CBlockingSocket(ClientSocket);
+		}
+	}
+
+	return INVALID_SOCKET;
 }
 
-bool CBlockingSocket::Send(char *buff, int bufflen) {
-	int iResult;
-	iResult = send(consocket, buff, bufflen, 0);
-	if (iResult == SOCKET_ERROR) {
-		printf("send failed with error: %d\n", WSAGetLastError());
-		closesocket(consocket);
-		WSACleanup();
-		return false;
+BOOL CBlockingSocket::Connect()
+{
+	if (connect(this->m_socket, this->info->ai_addr, (int)this->info->ai_addrlen) != SOCKET_ERROR)
+	{
+		return TRUE;
 	}
-	return true;
+	else
+	{
+		cout << "Socket Connect Failed!" << endl;
+		return FALSE;
+	}
 }
 
-int CBlockingSocket::Recv(char *buff) {
-	int iResult;
-	iResult=recv(consocket, buff, DEFAULT_BUFLEN, 0);
-	return iResult;
+INT CBlockingSocket::Send(const char *s, int count)
+{
+	int sendLen = send(this->m_socket, s, count, 0);
+	if (sendLen == SOCKET_ERROR)
+	{
+		cout << "Send Failed!" << endl;
+		return FALSE;
+	}
+	else
+	{
+		return TRUE;
+	}
+}
+
+INT CBlockingSocket::Recv(char *recvbuf, int recvbuflen)
+{
+	int recvLen = recv(this->m_socket, recvbuf, recvbuflen, 0);//在ClientSocket的m_socket上
+	if (recvLen == SOCKET_ERROR || recvLen == 0)
+	{
+		return -1;
+	}
+	else
+	{
+		return recvLen;
+	}
+}
+
+void CBlockingSocket::Close()
+{
+	if (closesocket(this->m_socket) == 0)
+	{
+		cout << "Connection is down!" << endl;
+	}
+	else
+	{
+		cout << "Connection Close Failed!" << endl;
+	}
 }

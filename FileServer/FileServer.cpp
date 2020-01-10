@@ -5,11 +5,6 @@
 
 DWORD WINAPI SendFileThread(LPVOID);
 
-struct params {
-	CBlockingSocket bs;
-	char recvbuff[512];
-};
-
 int __cdecl main(int argc, char **argv)
 {
 	WSADATA wsaData;
@@ -44,27 +39,26 @@ int __cdecl main(int argc, char **argv)
 	memset(&ListenAddr, 0, sizeof(SOCKADDR_IN));
 	ListenAddr.sin_family = AF_INET;
 	ListenAddr.sin_addr = *(in_addr*)hostIp->h_addr_list[0];
-	printf("Echo server is listening on %s:%s\n", inet_ntoa(*(struct in_addr*)*(hostIp->h_addr_list)), port);
+
 
 	CBlockingSocket bs;
-	bs.Listen((SOCKADDR *)&ServerAddr, sizeof(ServerAddr));
+	bs.Open(NULL, argv[1]);
+	bs.Listen(argv[1]);
 	int recvcount;
 	int count = 0;
 	while (true) {
 		printf("Waiting for connection.....\n");
-		bs.Accept();
-		recvcount = bs.Recv(recvbuff);
-		if (recvcount > 0) {
-			printf("  File requested from the client: %s\n", recvbuff);
-		}
-		params pm;
-		pm.bs.consocket = bs.consocket;
-		memcpy(&pm.recvbuff, recvbuff, 512);
+		struct sockaddr their_addr;
+		struct sockaddr_in their_addrin;
+		CBlockingSocket cs = bs.Accept(their_addr);
+		//bs.Close();
+		//closesocket(bs.consocket);
+		//bs.consocket = SOCKET_ERROR;
 		aThread[count] = CreateThread(
 			NULL,       // default security attributes
 			0,          // default stack size
 			(LPTHREAD_START_ROUTINE)SendFileThread,
-			&pm,       // no thread function arguments
+			&cs,       // no thread function arguments
 			0,          // default creation flags
 			&ThreadID); // receive thread identifier
 
@@ -81,23 +75,27 @@ int __cdecl main(int argc, char **argv)
 
 
 DWORD WINAPI SendFileThread(LPVOID lp) {
-	params *pm = (params *)lp;
-	char sendbuff[512];
+	CBlockingSocket*cs = (CBlockingSocket *)lp;
+	CBlockingSocket ClientSocket = *cs;//用局部变量保存线程传进来的地址传递的参数，防止主线程中socket被改写。
+	char sendbuff[512] = {'\0'};
+	char recvbuff[DEFAULT_BUFLEN] = { '\0' };
+	ClientSocket.Recv(recvbuff, sizeof(recvbuff));
 	FILE *read;
-	if ((read = fopen(pm->recvbuff, "r")) == NULL) {
-		pm->bs.Close();
-		printf("  %s does not exist\n", pm->recvbuff);
+	if ((read = fopen(recvbuff, "r")) == NULL) {
+		ClientSocket.Close();
+		printf("  %s does not exist\n", recvbuff);
 		printf("  Connection closed\n");
 		return 0;
 	}
 	printf("  Sending file to client\n");
 	while (fgets(sendbuff, DEFAULT_BUFLEN, read)) {
-		pm->bs.Send(sendbuff, DEFAULT_BUFLEN);
+		ClientSocket.Send(sendbuff, DEFAULT_BUFLEN);
 		memset(&sendbuff, '\0', DEFAULT_BUFLEN);
 	}
-	pm->bs.Close();
-	printf("  File sent to the client: %s\n", pm->recvbuff);
+	ClientSocket.Close();
+	printf("  File sent to the client: %s\n",recvbuff);
 	printf("  Connection closed\n");
-	memset(&pm->recvbuff, '\0', DEFAULT_BUFLEN);
+	memset(&recvbuff, '\0', DEFAULT_BUFLEN);
 	return 1;
+	//free(pm->bs.consocket);
 }
